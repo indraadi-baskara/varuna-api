@@ -1,57 +1,90 @@
 const { QueryTypes } = require("sequelize");
 const OutletList = require("../../helpers/OutletLists");
 const DatabaseConnection = require("../../helpers/DatabaseConnection");
+const SalesQuery = require("../../helpers/SalesQuery");
+
+const formatDate = (date) => {
+	let newDate = new Date(date);
+	let day = newDate.getDate();
+	let month = newDate.getMonth() + 1;
+	let year = newDate.getFullYear();
+	return `${day} / ${month} / ${year}`;
+};
 
 class Sales {
 	static async index(req, res, next) {
 		const { outletName, year, month } = req.params;
 		const outlet = OutletList[outletName];
-		let result = {};
+		let output = {
+			success: false,
+			name: outlet["name"],
+			tahun: parseInt(year),
+			bulan: parseInt(month),
+			result: [],
+		};
 
 		try {
 			const database = new DatabaseConnection(outlet);
 			const databaseConnection = await database.connect();
 
-			const query = `SELECT
-		    d.*
-		  FROM (
-		    SELECT
-		      b.tgl_jual,
-		      SUM(c.FOOD) AS FOOD,
-		      SUM(c.bev) AS BEV,
-		      SUM(c.bev1) AS BEV1,
-		      SUM(c.CIGARETTE) AS CIGARETTE,
-		      SUM(c.MINIBAR) AS MINIBAR,
-		      SUM(b.tot_gross) AS JUMLAH,
-		      SUM(b.tot_service) AS TAX,
-		      SUM(b.tot_tax) AS SERVICE,
-		      SUM(b.tot_grand) AS TOTAL
-		    FROM karaoke.t_jual AS b
-		    LEFT JOIN (
-		      SELECT
-		        a.kd_jual,
-		        SUM(IF(a.nm_kat = 'FOOD', a.jml_jual * a.hrg_jual, 0)) AS FOOD,
-		        SUM(IF(a.nm_kat = 'BEV', a.jml_jual * a.hrg_jual, 0)) AS bev,
-		        SUM(IF(a.nm_kat = 'BEV1', a.jml_jual * a.hrg_jual, 0)) AS bev1,
-		        SUM(IF(a.nm_kat = 'CIGARETTE', a.jml_jual * a.hrg_jual, 0)) AS CIGARETTE,
-		        SUM(IF(a.nm_kat = 'MINIBAR', a.jml_jual * a.hrg_jual, 0)) AS MINIBAR
-		      FROM karaoke.t_jual_detail AS a
-		      GROUP BY a.kd_jual) AS c
-		    ON b.kd_jual = c.kd_jual
-		    GROUP BY b.tgl_jual
-		  ) AS d
-		  WHERE YEAR(d.tgl_jual) = ${year}
-		  AND MONTH(d.tgl_jual) = ${month}
-		  `;
+			let reportsTarget = await databaseConnection.query(
+				SalesQuery.reportTarget(year, month),
+				{
+					type: QueryTypes.SELECT,
+				}
+			);
 
-			result = await databaseConnection.query(query, {
-				type: QueryTypes.SELECT,
+			reportsTarget.map((report) => {
+				for (const key in report) {
+					if (key === "tgl_jual") {
+						report[key] = formatDate(report[key]);
+					}
+					report.TARGET = parseInt(report.TOTAL);
+					if (key !== "tgl_jual") {
+						report[key] = 0;
+					}
+				}
 			});
+
+			let reports = await databaseConnection.query(
+				SalesQuery.report(year, month),
+				{
+					type: QueryTypes.SELECT,
+				}
+			);
+
+			reports.map((report) => {
+				report.TARGET = 0;
+				for (const key in report) {
+					if (key === "tgl_jual") {
+						report[key] = formatDate(report[key]);
+					}
+					if (key !== "tgl_jual") {
+						report[key] = parseInt(report[key]) || 0;
+					}
+				}
+
+				let existInReportTarget = reportsTarget
+					.map((item) => item.tgl_jual)
+					.indexOf(report.tgl_jual);
+
+				if (existInReportTarget != "-1") {
+					let target = reportsTarget[existInReportTarget];
+					report.TARGET =
+						report.TOTAL === target.TARGET
+							? target.TARGET - report.TARGET
+							: target.TARGET;
+					reportsTarget.splice(existInReportTarget, existInReportTarget + 1);
+				}
+			});
+
+			output.result = [...reports, ...reportsTarget];
+			output.success = output.result.length > 0 ? true : false;
 		} catch (error) {
 			console.log("somethings wrong, i can feel it => ", error);
 		}
 
-		res.json(result);
+		res.json(output);
 	}
 }
 

@@ -1,25 +1,34 @@
-var express = require("express");
-var path = require("path");
-var cookieParser = require("cookie-parser");
-var logger = require("morgan");
-var helmet = require("helmet");
+const express = require("express");
+const path = require("path");
+const cookieParser = require("cookie-parser");
+const logger = require("morgan");
+const helmet = require("helmet");
 const cors = require("cors");
+const compression = require("compression");
 
 const corsOptions = {
 	origin: "*",
 };
 
-var indexRouter = require("./routes/index");
+const indexRouter = require("./routes/index");
 
-var app = express();
+const app = express();
 
+app.use(compression());
 app.use(logger("dev"));
-app.use(helmet());
+app.use(
+	helmet({
+		contentSecurityPolicy: false,
+	})
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api", cors(corsOptions), indexRouter);
+app.use("/", express.static(path.join(__dirname, "public/assets")));
+app.all("*", (req, res) => {
+	res.sendFile(path.join(__dirname, "public/assets/index.html"));
+});
 
 module.exports = app;

@@ -1,3 +1,4 @@
+const env = require("../env");
 const { Sequelize } = require("sequelize");
 
 class DatabaseConnection {
@@ -18,7 +19,7 @@ class DatabaseConnection {
 			host: hostname,
 			dialect: DBDriver,
 			dialectOptions: {
-				connectTimeout: 1000 * 3,
+				connectTimeout: env.dbConnectTimeout,
 			},
 		});
 
@@ -27,7 +28,7 @@ class DatabaseConnection {
 			console.log("Connection has been established successfully.");
 			return this.sequelize;
 		} catch (error) {
-			console.error("Unable to connect to the database:", error);
+			console.error("Unable to connect to the database:", "ETIMEDOUT");
 			this.sequelize = false;
 			return this.sequelize;
 		}
